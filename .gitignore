@@ -1,0 +1,5 @@
+fine-tuning/outputs/
+fine-tuning/.cache/
+ollama/
+unsloth_compiled_cache
+fine-tuning/data/category_train.json

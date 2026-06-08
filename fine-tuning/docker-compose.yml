@@ -1,0 +1,31 @@
+services:
+  unsloth:
+    build:
+      context: ..
+      dockerfile: fine-tuning/Dockerfile
+    container_name: category-fine-tuning
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace
+      - huggingface-cache:/root/.cache/huggingface
+    environment:
+      - HF_HOME=/root/.cache/huggingface
+    gpus: all
+    stdin_open: true
+    tty: true
+
+  ollama:
+    image: ollama/ollama:0.20.3
+    container_name: classifier-ollama
+    volumes:
+      - ..:/workspace
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"
+    gpus: all
+    stdin_open: true
+    tty: true
+
+volumes:
+  huggingface-cache:
+  ollama-models:
