@@ -1,12 +1,14 @@
 services:
   unsloth:
+    profiles:
+      - training
     build:
-      context: ..
+      context: .
       dockerfile: fine-tuning/Dockerfile
     container_name: category-fine-tuning
     working_dir: /workspace
     volumes:
-      - ..:/workspace
+      - .:/workspace
       - huggingface-cache:/root/.cache/huggingface
     environment:
       - HF_HOME=/root/.cache/huggingface
@@ -16,13 +18,26 @@ services:
 
   ollama:
     image: ollama/ollama:0.20.3
-    container_name: classifier-ollama
+    container_name: category-classifier-ollama
     volumes:
-      - ..:/workspace
+      - .:/workspace
       - ollama-models:/root/.ollama
     ports:
-      - "11434:11434"
-    gpus: all
+      - "11499:11434"
+    stdin_open: true
+    tty: true
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: category-api
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      - ollama
+    ports:
+      - "8090:8000"
     stdin_open: true
     tty: true
 

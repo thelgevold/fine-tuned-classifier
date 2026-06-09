@@ -4,12 +4,13 @@ This repo contains a self-contained workflow for fine-tuning a small classifier 
 
 ## Repo layout
 
-- `fine-tuning/category_train.json`: static training dataset
-- `fine-tuning/train_categories_unsloth.py`: QLoRA training script
+- `fine-tuning/data/category_train.json`: static training dataset
+- `fine-tuning/train_categories.py`: QLoRA training script
 - `fine-tuning/export_merged.py`: merges the LoRA adapter into the base model
 - `fine-tuning/Dockerfile`: training image with Unsloth and llama.cpp
-- `fine-tuning/docker-compose.yml`: local `unsloth` and `ollama` services
+- `docker-compose.yml`: local `unsloth`, `ollama`, and API services
 - `fine-tuning/run-finetune-pipeline.ps1`: end-to-end training wrapper
+- `api/main.py`: FastAPI service for Ollama-backed categorization
 
 ## Prerequisites
 
@@ -21,7 +22,7 @@ This repo contains a self-contained workflow for fine-tuning a small classifier 
 From the repo root:
 
 ```powershell
-docker compose -f fine-tuning/docker-compose.yml build
+docker compose -f docker-compose.yml build unsloth
 ```
 
 ## Run the full pipeline
@@ -44,12 +45,6 @@ This wrapper will:
 
 ## Useful options
 
-Run the held-out test set and skip the final full-dataset fit:
-
-```powershell
-.\fine-tuning\run-finetune-pipeline.ps1 -ModelName our-house-qwen3-0.6b -BaseModel "Qwen/Qwen3-0.6B" -RunFinalTest -FinalFitEpochs 0
-```
-
 Use a different quantization:
 
 ```powershell
@@ -66,3 +61,47 @@ The pipeline writes artifacts under:
 - `fine-tuning/outputs/<model-name>/reports`
 
 The final Ollama model is created with the same name you pass via `-ModelName`.
+
+## API
+
+Install the API dependencies:
+
+```powershell
+pip install -r api/requirements.txt
+```
+
+Run the API from the repo root:
+
+```powershell
+uvicorn api.main:app --reload
+```
+
+The API expects Ollama to be reachable at `http://localhost:11434` by default. Override that with `OLLAMA_BASE_URL` if needed.
+
+Run the API in Docker with Ollama:
+
+```powershell
+docker compose -f docker-compose.yml up -d --build ollama api
+```
+
+The `unsloth` training container is under the `training` profile, so a plain `docker compose up` starts the API-facing services without trying to launch the GPU training container.
+
+Example request:
+
+```json
+{
+  "model_name": "our-house-qwen3-0.6b",
+  "question": "When did we replace the downstairs AC unit?"
+}
+```
+
+Example response:
+
+```json
+{
+  "model_name": "our-house-qwen3-0.6b",
+  "question": "When did we replace the downstairs AC unit?",
+  "code": "hv",
+  "category": "hvac"
+}
+```
