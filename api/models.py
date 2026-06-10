@@ -5,8 +5,8 @@ class CategorizeQuestionRequest(BaseModel):
     model_name: str = Field(..., min_length=1, description="Ollama model name to query")
     question: str = Field(..., min_length=1, description="Homeowner question to categorize")
     num_predict: int = Field(
-        default=3,
-        ge=8,
+        default=4,
+        ge=1,
         description="Maximum number of tokens to generate for the category response",
     )
     think: bool = Field(

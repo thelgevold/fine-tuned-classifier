@@ -105,3 +105,32 @@ Example response:
   "category": "hvac"
 }
 ```
+
+## Evaluation
+
+Install the API dependencies, which now include `pytest`:
+
+```powershell
+pip install -r api/requirements.txt
+```
+
+With `ollama` and `api` running locally, execute the comparison suite:
+
+```powershell
+python -m pytest eval --baseline-model qwen3:0.6b --finetuned-model our-house-qwen3-0.6b --num-predict 50
+```
+
+The suite will:
+
+1. enumerate every question in `eval/categorization_test_cases.json`
+2. run each case against both the baseline and fine-tuned models
+3. assert the predicted category matches the expected category
+4. generate comparison reports with accuracy and timing at:
+   - `eval/reports/categorization_comparison_report.json`
+   - `eval/reports/categorization_comparison_report.md`
+
+Useful options:
+
+```powershell
+python -m pytest eval --api-base-url http://localhost:8090 --think
+```

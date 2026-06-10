@@ -4,3 +4,5 @@ ollama/
 unsloth_compiled_cache
 fine-tuning/data/category_train.json
 **/__pycache__
+eval/*.json
+eval/reports/

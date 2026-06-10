@@ -18,6 +18,7 @@ BASE_MODEL = "Qwen/Qwen3-0.6B"
 DATA_PATH = Path("data/category_train.json")
 MAX_SEQ_LENGTH = 512
 OUTPUT_CODE_TO_CATEGORY = {code: category for category, code in CATEGORY_OUTPUT_CODES.items()}
+VALID_CODES = set(OUTPUT_CODE_TO_CATEGORY)
 
 
 def format_example(example, eos_token):
@@ -32,10 +33,8 @@ def normalize_prediction(text):
     if not cleaned:
         return cleaned
 
-    first_token = cleaned.split()[0].rstrip(":").strip().lower()
-    if first_token in OUTPUT_CODE_TO_CATEGORY:
-       return OUTPUT_CODE_TO_CATEGORY[first_token]
-    return cleaned
+    first_token = cleaned.split()[0].rstrip(":").strip().upper()
+    return first_token
 
 
 def predict_category(model, tokenizer, question):
@@ -48,7 +47,7 @@ def predict_category(model, tokenizer, question):
         outputs = model.generate(
             **inputs,
             max_length=None,
-            max_new_tokens=3,
+            max_new_tokens=8,
             temperature=0.0,
             do_sample=False,
             eos_token_id=tokenizer.eos_token_id,
@@ -68,23 +67,28 @@ def evaluate_split(model, tokenizer, records):
     per_category_correct = Counter()
 
     for record in records:
-        predicted = predict_category(model, tokenizer, record["question"])
+        predicted_code = predict_category(model, tokenizer, record["question"])
         expected = record["category"]
+        expected_code = CATEGORY_OUTPUT_CODES[expected]
+        predicted_category = OUTPUT_CODE_TO_CATEGORY.get(predicted_code)
+        is_correct = predicted_code == expected_code
 
         predictions.append(
             {
                 "question": record["question"],
                 "expected_category": expected,
-                "predicted_category": predicted,
-                "correct": predicted == expected,
+                "expected_code": expected_code,
+                "predicted_code": predicted_code,
+                "predicted_category": predicted_category,
+                "correct": is_correct,
             }
         )
 
         per_category[expected] += 1
-        if predicted == expected:
+        if is_correct:
             correct += 1
             per_category_correct[expected] += 1
-        if predicted not in CATEGORY_OUTPUT_CODES:
+        if predicted_code not in VALID_CODES:
             invalid += 1
 
     accuracy = correct / len(records) if records else 0.0
@@ -100,8 +104,10 @@ def evaluate_split(model, tokenizer, records):
     metrics = {
         "examples": len(records),
         "correct": correct,
+        "misclassified_predictions": len(records) - correct,
         "accuracy": accuracy,
         "invalid_predictions": invalid,
+        "invalid_code_predictions": invalid,
         "per_category_accuracy": per_category_accuracy,
     }
 

@@ -34,10 +34,10 @@ def normalize_prediction(text: str) -> str:
     if not cleaned:
         return cleaned
 
-    first_token = cleaned.split()[0].rstrip(":").strip().lower()
+    first_token = cleaned.split()[0].rstrip(":").strip().upper()
     if first_token in OUTPUT_CODE_TO_CATEGORY:
         return first_token
-    return cleaned.lower()
+    return first_token
 
 
 @app.get("/models", response_model=AvailableModelsResponse)
@@ -81,7 +81,7 @@ async def categorize_question(
         "think": request.think,
         "options": {
             "temperature": 0,
-            "num_predict": 4,
+            "num_predict": request.num_predict,
         },
     }
 
