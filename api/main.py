@@ -25,19 +25,43 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11499")
 OUTPUT_CODE_TO_CATEGORY = {
     code: category for category, code in CATEGORY_OUTPUT_CODES.items()
 }
+VALID_CATEGORIES = set(CATEGORY_OUTPUT_CODES)
 
 app = FastAPI(title="Question Categorization API", version="1.0.0")
 
 
-def normalize_prediction(text: str) -> str:
+def normalize_code_prediction(text: str) -> str:
     cleaned = text.strip()
     if not cleaned:
         return cleaned
 
     first_token = cleaned.split()[0].rstrip(":").strip().upper()
-    if first_token in OUTPUT_CODE_TO_CATEGORY:
-        return first_token
     return first_token
+
+
+def normalize_category_prediction(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return cleaned
+
+    return cleaned.splitlines()[0].strip().rstrip(":").lower()
+
+
+def extract_prediction(raw_response: str, label_mode: str) -> tuple[str | None, str | None]:
+    marker = "Category:" if label_mode == "category" else "Code:"
+    response_suffix = raw_response.split(marker)[-1].strip()
+
+    if label_mode == "category":
+        category = normalize_category_prediction(response_suffix)
+        if category not in VALID_CATEGORIES:
+            return None, None
+        return category, CATEGORY_OUTPUT_CODES[category]
+
+    code = normalize_code_prediction(response_suffix)
+    category = OUTPUT_CODE_TO_CATEGORY.get(code)
+    if category is None:
+        return None, code
+    return category, code
 
 
 @app.get("/models", response_model=AvailableModelsResponse)
@@ -72,6 +96,7 @@ async def categorize_question(
     prompt = PromptHandler.create_categorize_query_prompt(
         request.question,
         CATEGORY_OUTPUT_CODES,
+        label_mode=request.label_mode,
     )
 
     payload = {
@@ -111,13 +136,18 @@ async def categorize_question(
         raise HTTPException(status_code=502, detail=f"Unable to reach Ollama: {exc}") from exc
 
     raw_response = response.json().get("response", "")
-    code = normalize_prediction(raw_response)
-    category = OUTPUT_CODE_TO_CATEGORY.get(code)
+    category, code = extract_prediction(raw_response, request.label_mode)
     if category is None:
+        invalid_value = code if request.label_mode == "code" else raw_response.strip()
+        detail_prefix = (
+            "Ollama returned an unknown category name"
+            if request.label_mode == "category"
+            else "Ollama returned an unknown category code"
+        )
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Ollama returned an unknown category code {code!r} "
+                f"{detail_prefix} {invalid_value!r} "
                 f"from response {raw_response!r}"
             ),
         )

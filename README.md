@@ -33,6 +33,12 @@ From the repo root:
 .\fine-tuning\run-finetune-pipeline.ps1 -ModelName our-house-qwen3-0.6b -BaseModel "Qwen/Qwen3-0.6B"
 ```
 
+Train a parallel model that emits full category names instead of opaque codes:
+
+```powershell
+.\fine-tuning\run-finetune-pipeline-category-names.ps1 -ModelName our-house-qwen3-0.6b-category-names -BaseModel "Qwen/Qwen3-0.6B"
+```
+
 This wrapper will:
 
 1. start the local `unsloth` and `ollama` containers
@@ -43,12 +49,20 @@ This wrapper will:
 6. write `fine-tuning/outputs/<model-name>/Modelfile`
 7. create the Ollama model
 
+The default pipeline trains the model to emit opaque two-letter labels. The category-name pipeline keeps the same dataset and export flow, but trains the model to emit full category names such as `hvac` or `water heater`, and should use a distinct model name.
+
 ## Useful options
 
 Use a different quantization:
 
 ```powershell
 .\fine-tuning\run-finetune-pipeline.ps1 -ModelName our-house-qwen3-0.6b -BaseModel "Qwen/Qwen3-0.6B" -Quantization "Q5_K_M"
+```
+
+Use the main pipeline directly with explicit label mode selection:
+
+```powershell
+.\fine-tuning\run-finetune-pipeline.ps1 -ModelName our-house-qwen3-0.6b-category-names -BaseModel "Qwen/Qwen3-0.6B" -LabelMode category
 ```
 
 ## Outputs
@@ -117,13 +131,17 @@ pip install -r api/requirements.txt
 With `ollama` and `api` running locally, execute the comparison suite:
 
 ```powershell
-python -m pytest eval --baseline-model qwen3:0.6b --finetuned-model our-house-qwen3-0.6b --num-predict 50
+python -m pytest eval --baseline-model qwen3:0.6b --finetuned-code-model our-house-qwen3-0.6b --finetuned-category-model our-house-qwen3-0.6b-category-names --num-predict 8
 ```
 
 The suite will:
 
 1. enumerate every question in `eval/categorization_test_cases.json`
-2. run each case against both the baseline and fine-tuned models
+2. run each case against all four scenarios:
+   - fine-tuned with opaque short codes
+   - fine-tuned with full category names
+   - base model with full category names
+   - base model with opaque short codes
 3. assert the predicted category matches the expected category
 4. generate comparison reports with accuracy and timing at:
    - `eval/reports/categorization_comparison_report.json`
@@ -133,4 +151,5 @@ Useful options:
 
 ```powershell
 python -m pytest eval --api-base-url http://localhost:8090 --think
+python -m pytest eval --baseline-model qwen3:0.6b --finetuned-code-model my-code-model --finetuned-category-model my-category-model
 ```

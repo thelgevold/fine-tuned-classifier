@@ -4,7 +4,10 @@ param(
 
     [string]$BaseModel = "Qwen/Qwen3-0.6B",
 
-    [string]$Quantization = "Q4_K_M"
+    [string]$Quantization = "Q4_K_M",
+
+    [ValidateSet("code", "category")]
+    [string]$LabelMode = "code"
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,6 +46,7 @@ function Invoke-DockerComposeOrThrow {
 }
 
 Write-Host "Running fine-tuning pipeline for $ModelName"
+Write-Host "Label mode: $LabelMode"
 
 Push-Location $repoRoot
 try {
@@ -66,7 +70,8 @@ try {
         "/workspace/fine-tuning/train_categories.py",
         "--base-model", $BaseModel,
         "--data-path", "/workspace/fine-tuning/data/category_train.json",
-        "--output-dir", $outputDir
+        "--output-dir", $outputDir,
+        "--label-mode", $LabelMode
     )
     Invoke-DockerComposeOrThrow -Arguments (@("-f", "docker-compose.yml", "exec", "unsloth") + $trainCommand) -FailureMessage "Training failed inside the unsloth container."
     Write-Host "Step 3"

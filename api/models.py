@@ -1,9 +1,15 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
 class CategorizeQuestionRequest(BaseModel):
     model_name: str = Field(..., min_length=1, description="Ollama model name to query")
     question: str = Field(..., min_length=1, description="Homeowner question to categorize")
+    label_mode: Literal["code", "category"] = Field(
+        default="code",
+        description="Whether the target model was trained to emit opaque codes or full category names",
+    )
     num_predict: int = Field(
         default=4,
         ge=1,

@@ -8,15 +8,20 @@ import httpx
 
 def test_categorize_question(
     case: dict[str, object],
-    finetuned_model: str,
+    model_target: dict[str, str],
     api_base_url: str,
     num_predict: int,
     think: bool,
     request,
 ) -> None:
+    scenario = model_target["scenario"]
+    model_name = model_target["name"]
+    model_kind = model_target["kind"]
+    label_mode = model_target["label_mode"]
     payload = {
-        "model_name": finetuned_model,
+        "model_name": model_name,
         "question": case["question"],
+        "label_mode": label_mode,
         "num_predict": num_predict,
         "think": think,
     }
@@ -54,8 +59,10 @@ def test_categorize_question(
             "case_id": case["id"],
             "question": case["question"],
             "expected_category": case["expected_category"],
-            "model_kind": "finetuned",
-            "model_name": finetuned_model,
+            "scenario": scenario,
+            "model_kind": model_kind,
+            "model_name": model_name,
+            "label_mode": label_mode,
             "predicted_category": predicted_category,
             "predicted_code": predicted_code,
             "correct": correct,
@@ -68,5 +75,6 @@ def test_categorize_question(
     assert error is None, error
     assert predicted_category == case["expected_category"], (
         f"Expected {case['expected_category']!r} but got {predicted_category!r} "
-        f"for question {case['question']!r} using model {finetuned_model!r}"
+        f"for question {case['question']!r} using model {model_name!r} "
+        f"({scenario}, {model_kind}, {label_mode})"
     )

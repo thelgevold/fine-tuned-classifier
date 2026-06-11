@@ -19,13 +19,21 @@ DATA_PATH = Path("data/category_train.json")
 MAX_SEQ_LENGTH = 512
 OUTPUT_CODE_TO_CATEGORY = {code: category for category, code in CATEGORY_OUTPUT_CODES.items()}
 VALID_CODES = set(OUTPUT_CODE_TO_CATEGORY)
+VALID_CATEGORIES = set(CATEGORY_OUTPUT_CODES)
 
 
-def format_example(example, eos_token):
+def format_example(example, eos_token, label_mode):
     prompt = PromptHandler.create_categorize_query_prompt(
-        example["question"], CATEGORY_OUTPUT_CODES
+        example["question"], CATEGORY_OUTPUT_CODES, label_mode=label_mode
     )
-    return {"text": prompt + CATEGORY_OUTPUT_CODES[example["category"]] + eos_token}
+    target = get_target_label(example["category"], label_mode)
+    return {"text": prompt + target + eos_token}
+
+
+def get_target_label(category, label_mode):
+    if label_mode == "category":
+        return category
+    return CATEGORY_OUTPUT_CODES[category]
 
 
 def normalize_prediction(text):
@@ -37,9 +45,26 @@ def normalize_prediction(text):
     return first_token
 
 
-def predict_category(model, tokenizer, question):
+def normalize_category_prediction(text):
+    cleaned = text.strip()
+    if not cleaned:
+        return cleaned
+
+    normalized = cleaned.splitlines()[0].strip().rstrip(":").lower()
+    return normalized
+
+
+def parse_raw_prediction(text, label_mode):
+    marker = "Category:" if label_mode == "category" else "Code:"
+    raw_prediction = text.split(marker)[-1].strip()
+    if label_mode == "category":
+        return normalize_category_prediction(raw_prediction)
+    return normalize_prediction(raw_prediction)
+
+
+def predict_category(model, tokenizer, question, label_mode):
     prompt = PromptHandler.create_categorize_query_prompt(
-        question, CATEGORY_OUTPUT_CODES
+        question, CATEGORY_OUTPUT_CODES, label_mode=label_mode
     )
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
@@ -55,11 +80,10 @@ def predict_category(model, tokenizer, question):
         )
 
     text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    raw_prediction = text.split("Code:")[-1].strip()
-    return normalize_prediction(raw_prediction)
+    return parse_raw_prediction(text, label_mode)
 
 
-def evaluate_split(model, tokenizer, records):
+def evaluate_split(model, tokenizer, records, label_mode):
     predictions = []
     correct = 0
     invalid = 0
@@ -67,17 +91,24 @@ def evaluate_split(model, tokenizer, records):
     per_category_correct = Counter()
 
     for record in records:
-        predicted_code = predict_category(model, tokenizer, record["question"])
+        predicted_label = predict_category(model, tokenizer, record["question"], label_mode)
         expected = record["category"]
-        expected_code = CATEGORY_OUTPUT_CODES[expected]
-        predicted_category = OUTPUT_CODE_TO_CATEGORY.get(predicted_code)
-        is_correct = predicted_code == expected_code
+        expected_label = get_target_label(expected, label_mode)
+        predicted_category = (
+            predicted_label if label_mode == "category" else OUTPUT_CODE_TO_CATEGORY.get(predicted_label)
+        )
+        predicted_code = (
+            CATEGORY_OUTPUT_CODES.get(predicted_label) if label_mode == "category" else predicted_label
+        )
+        is_correct = predicted_label == expected_label
 
         predictions.append(
             {
                 "question": record["question"],
                 "expected_category": expected,
-                "expected_code": expected_code,
+                "expected_code": CATEGORY_OUTPUT_CODES[expected],
+                "expected_label": expected_label,
+                "predicted_label": predicted_label,
                 "predicted_code": predicted_code,
                 "predicted_category": predicted_category,
                 "correct": is_correct,
@@ -88,7 +119,7 @@ def evaluate_split(model, tokenizer, records):
         if is_correct:
             correct += 1
             per_category_correct[expected] += 1
-        if predicted_code not in VALID_CODES:
+        if is_invalid_prediction(predicted_label, label_mode):
             invalid += 1
 
     accuracy = correct / len(records) if records else 0.0
@@ -114,6 +145,12 @@ def evaluate_split(model, tokenizer, records):
     return metrics, predictions
 
 
+def is_invalid_prediction(predicted_label, label_mode):
+    if label_mode == "category":
+        return predicted_label not in VALID_CATEGORIES
+    return predicted_label not in VALID_CODES
+
+
 def write_json(path, payload):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="\n") as file:
@@ -126,6 +163,12 @@ def parse_args():
     parser.add_argument("--base-model", default=BASE_MODEL)
     parser.add_argument("--data-path", type=Path, default=DATA_PATH)
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/house-qwen3-0.6b"))
+    parser.add_argument(
+        "--label-mode",
+        choices=("code", "category"),
+        default="code",
+        help="Train the model to emit opaque two-letter codes or full category names.",
+    )
     parser.add_argument("--seed", type=int, default=3407)
     return parser.parse_args()
 
@@ -176,13 +219,13 @@ def main():
     train_dataset = Dataset.from_list(train_records)
     train_dataset = train_dataset.map(
         format_example,
-        fn_kwargs={"eos_token": tokenizer.eos_token or ""},
+        fn_kwargs={"eos_token": tokenizer.eos_token or "", "label_mode": args.label_mode},
         remove_columns=train_dataset.column_names,
     )
     validation_dataset = Dataset.from_list(validation_records)
     validation_dataset = validation_dataset.map(
         format_example,
-        fn_kwargs={"eos_token": tokenizer.eos_token or ""},
+        fn_kwargs={"eos_token": tokenizer.eos_token or "", "label_mode": args.label_mode},
         remove_columns=validation_dataset.column_names,
     )
 
@@ -230,13 +273,18 @@ def main():
 
     FastLanguageModel.for_inference(model)
 
-    validation_metrics, validation_predictions = evaluate_split(model, tokenizer, validation_records)
+    validation_metrics, validation_predictions = evaluate_split(
+        model, tokenizer, validation_records, args.label_mode
+    )
 
-    test_metrics, test_predictions = evaluate_split(model, tokenizer, test_records)
+    test_metrics, test_predictions = evaluate_split(
+        model, tokenizer, test_records, args.label_mode
+    )
 
     report = {
         "base_model": args.base_model,
         "data_path": str(args.data_path),
+        "label_mode": args.label_mode,
         "seed": args.seed,
         "split_sizes": {
             "train": len(train_records),
